@@ -1,0 +1,13 @@
+[project]
+name            = "stock-predictor"
+version         = "1.0.0"
+description     = "Binary stock direction classifier with purged walk-forward CV and financial backtesting"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I"]
+ignore = ["E501"]
