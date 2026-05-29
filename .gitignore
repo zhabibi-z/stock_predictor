@@ -17,7 +17,7 @@ env/
 *.ipynb_checkpoints
 
 # Data & plots (auto-generated; not source artifacts)
-data/*.csv
+# data/*.csv  — pre-cached ticker files committed for Streamlit Cloud
 plots/*.png
 
 # macOS
