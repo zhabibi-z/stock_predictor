@@ -1,9 +1,10 @@
-yfinance>=0.2.40
-scikit-learn>=1.4.0
-tensorflow>=2.15.0
-pandas>=2.1.0
-numpy>=1.26.0
-matplotlib>=3.8.0
-seaborn>=0.13.0
-streamlit>=1.35.0
-pyyaml>=6.0
+# Runtime dependencies — pinned for reproducibility
+yfinance==0.2.54
+scikit-learn==1.5.0
+tensorflow==2.18.0
+pandas==2.2.2
+numpy==1.26.4
+matplotlib==3.9.0
+seaborn==0.13.2
+streamlit==1.35.0
+PyYAML==6.0.1
