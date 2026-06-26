@@ -83,14 +83,14 @@ def main() -> None:
     raw_df = load_or_download(TICKER, DATA_START, DATA_END)
 
     # ── STEP 2: Feature Engineering ───────────────────────────────────────────
-    _banner(2, "Feature Engineering  (10 indicators, zero data leakage)")
+    _banner(2, "Feature Engineering  (11 indicators, zero data leakage)")
     data = engineer_features(
         raw_df,
         sma_short=f["sma_short"],   sma_long=f["sma_long"],
         rsi_window=f["rsi_window"],
         bb_window=f["bb_window"],   bb_std=f["bb_std"],
         macd_fast=f["macd_fast"],   macd_slow=f["macd_slow"],  macd_sig=f["macd_sig"],
-        atr_window=f["atr_window"],
+        atr_window=f["atr_window"], vol_window=f["vol_window"],
         lag_periods=f["lag_periods"],
     )
     up_pct = data["Target"].mean() * 100

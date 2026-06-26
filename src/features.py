@@ -105,6 +105,7 @@ def engineer_features(
     macd_slow:   int   = 26,
     macd_sig:    int   = 9,
     atr_window:  int   = 14,
+    vol_window:  int   = 20,
     lag_periods: list  = None,
 ) -> pd.DataFrame:
     """
@@ -148,6 +149,10 @@ def engineer_features(
     atr = _compute_atr(df, window=atr_window)
     data["ATR"]      = atr
     data["ATR_Norm"] = atr / (close + 1e-10)
+
+    # Volume relative to its rolling mean — > 1 signals above-average participation
+    vol_ma = data["Volume"].rolling(window=vol_window, min_periods=vol_window).mean()
+    data["Volume_Ratio"] = data["Volume"] / (vol_ma + 1e-10)
 
     for lag in lag_periods:
         data[f"Return_t{lag}"] = data["Daily_Return"].shift(lag)

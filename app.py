@@ -54,6 +54,7 @@ MACD_FAST     = _cfg["features"]["macd_fast"]
 MACD_SLOW     = _cfg["features"]["macd_slow"]
 MACD_SIG      = _cfg["features"]["macd_sig"]
 ATR_WINDOW    = _cfg["features"]["atr_window"]
+VOL_WINDOW    = _cfg["features"]["vol_window"]
 LAG_PERIODS   = _cfg["features"]["lag_periods"]
 N_SPLITS      = _cfg["validation"]["n_splits"]
 PURGE_GAP     = _cfg["validation"]["purge_gap"]
@@ -88,7 +89,7 @@ def _fetch_and_engineer(ticker: str, start: str, end: str) -> pd.DataFrame:
         rsi_window=RSI_WINDOW,
         bb_window=BB_WINDOW,   bb_std=BB_STD,
         macd_fast=MACD_FAST,   macd_slow=MACD_SLOW,  macd_sig=MACD_SIG,
-        atr_window=ATR_WINDOW, lag_periods=LAG_PERIODS,
+        atr_window=ATR_WINDOW, vol_window=VOL_WINDOW, lag_periods=LAG_PERIODS,
     )
 
 
