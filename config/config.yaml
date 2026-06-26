@@ -1,7 +1,7 @@
 data:
   ticker: AAPL
   start: "2015-11-11"
-  end: "2025-11-11"
+  end: "2026-06-25"
 
 features:
   sma_short: 5
@@ -14,6 +14,7 @@ features:
   macd_sig: 9
   atr_window: 14
   lag_periods: [1, 2, 5]
+  vol_window: 20
   cols:
     - Daily_Return
     - SMA_5
@@ -22,6 +23,7 @@ features:
     - BB_Pct
     - MACD_Hist
     - ATR_Norm
+    - Volume_Ratio
     - Return_t1
     - Return_t2
     - Return_t5
