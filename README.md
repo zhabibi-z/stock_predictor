@@ -42,7 +42,7 @@ stock-predictor-ml/
 │   └── visualization.py      # Stage 5: Equity curves, confusion matrices, drawdown plots
 │
 ├── app.py                    # Streamlit dashboard (run with: streamlit run app.py)
-├── main.py                   # CLI pipeline — all 8 steps end-to-end
+├── main.py                   # CLI pipeline, all 8 steps end-to-end
 └── requirements.txt
 ```
 
