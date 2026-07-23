@@ -21,26 +21,37 @@ Usage
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import os
+
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
-from src                import load_config
-from src.data_loader    import load_or_download
-from src.features       import engineer_features
-from src.models         import (
-    train_naive_bayes, predict_naive_bayes,
-    train_ridge, predict_ridge_direction,
-    train_mlp, predict_mlp,
-    compute_metrics, print_report, print_walk_forward_report,
+from src import load_config
+from src.backtester import (
+    print_backtest_report,
+    purged_walk_forward_splits,
+    run_backtest,
 )
-from src.backtester     import (
-    purged_walk_forward_splits, run_backtest, print_backtest_report,
+from src.data_loader import load_or_download
+from src.features import engineer_features
+from src.models import (
+    compute_metrics,
+    predict_mlp,
+    predict_naive_bayes,
+    predict_ridge_direction,
+    print_report,
+    print_walk_forward_report,
+    train_mlp,
+    train_naive_bayes,
+    train_ridge,
 )
-from src.visualization  import (
-    plot_equity_curves, plot_confusion_matrix, plot_drawdown,
+from src.visualization import (
+    plot_confusion_matrix,
+    plot_drawdown,
+    plot_equity_curves,
 )
 
 

@@ -1,6 +1,7 @@
 """ML Stock Direction Predictor — source package."""
 
 import os
+
 import yaml
 
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "config.yaml")

@@ -14,3 +14,5 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "app.py" = ["E402", "I001"]
+# main.py imports project modules after a sys.path bootstrap (same pattern as app.py).
+"main.py" = ["E402"]

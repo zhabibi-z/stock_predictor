@@ -1,7 +1,7 @@
 data:
   ticker: AAPL
   start: "2015-11-11"
-  end: "2026-06-25"
+  end: "2025-11-11"
 
 features:
   sma_short: 5

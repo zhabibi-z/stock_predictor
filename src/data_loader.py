@@ -5,6 +5,7 @@ A local CSV cache is written on first download so subsequent runs are instant.
 """
 
 import os
+
 import pandas as pd
 import yfinance as yf
 
@@ -25,9 +26,14 @@ def download_stock_data(ticker: str, start: str, end: str) -> pd.DataFrame:
 
 
 def load_or_download(ticker: str, start: str, end: str, data_dir: str = "data") -> pd.DataFrame:
-    """Return a locally cached CSV when available; download and cache otherwise."""
+    """Return a locally cached CSV when available; download and cache otherwise.
+
+    The cache key includes the ticker AND the requested date range, so changing any of
+    ticker/start/end in config.yaml uses a distinct cache file rather than silently reusing
+    stale data downloaded for a different window.
+    """
     os.makedirs(data_dir, exist_ok=True)
-    csv_path = os.path.join(data_dir, f"{ticker}_historical.csv")
+    csv_path = os.path.join(data_dir, f"{ticker}_{start}_{end}.csv")
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
         print(f"      Loaded from cache : {csv_path}  ({len(df):,} rows)")

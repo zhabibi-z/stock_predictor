@@ -14,7 +14,6 @@ for the Ridge model.  "Fwd_Return" is the realized forward return used
 exclusively by the backtesting engine.
 """
 
-import numpy as np
 import pandas as pd
 
 

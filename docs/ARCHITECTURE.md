@@ -10,7 +10,7 @@ A binary classification pipeline that predicts next-day stock price direction (U
 config/config.yaml          ← single source of truth for all hyperparameters
         │
         ▼  src/data_loader.py
-yfinance API  ──────────────►  data/AAPL_historical.csv  (cached after first run)
+yfinance API  ──────────────►  data/AAPL_<start>_<end>.csv  (cached after first run)
         │
         ▼  src/features.py
 Feature engineering (zero temporal leakage):

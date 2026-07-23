@@ -26,7 +26,7 @@ stock-predictor-ml/
 │   └── config.yaml           # All hyperparameters: ticker, windows, folds, NN settings
 │
 ├── data/
-│   └── AAPL_historical.csv   # Auto-generated on first run; subsequent runs load from cache
+│   └── AAPL_<start>_<end>.csv  # Cached download, keyed by ticker + date range
 │
 ├── notebooks/
 │   └── 01_eda.ipynb          # EDA: class imbalance, feature correlations, stationarity
@@ -36,7 +36,7 @@ stock-predictor-ml/
 ├── src/
 │   ├── __init__.py           # load_config() — parses config/config.yaml
 │   ├── data_loader.py        # Stage 1: Data Ingestion — yfinance download + CSV cache
-│   ├── features.py           # Stage 2: Feature Engineering — 10 indicators, zero leakage
+│   ├── features.py           # Stage 2: Feature Engineering — 11 features, zero leakage
 │   ├── models.py             # Stage 3: NB, Ridge, MLP definitions + classification metrics
 │   ├── backtester.py         # Stage 4: Walk-forward splits + vectorized backtest engine
 │   └── visualization.py      # Stage 5: Equity curves, confusion matrices, drawdown plots
@@ -161,21 +161,25 @@ AAPL has an upward bias over 10 years (~54% UP days). Without correction, models
 
 ### 4. Feature Engineering — Stationarity First
 
-Raw prices are non-stationary. Every feature is a stationary transformation:
+Raw prices are non-stationary, so **most** features are stationary transformations. The two
+moving averages are the deliberate exception — they are kept as raw trend levels for context
+(a known caveat; making them stationary via a `Close / SMA − 1` ratio is future work):
 
 | Feature | Transformation | Property |
 |---------|---------------|----------|
 | `Daily_Return` | `(Close[T] - Close[T-1]) / Close[T-1]` | ~i.i.d., mean ≈ 0 |
+| `SMA_5`, `SMA_20` | rolling mean of `Close` | **Price level (non-stationary)** — trend context |
 | `RSI` | Wilder EMA of gains / losses | Bounded [0, 100] |
 | `BB_Pct` | `(Close - Lower) / (Upper - Lower)` | Bounded [0, 1] |
 | `ATR_Norm` | `ATR(14) / Close[T]` | Dimensionless volatility ratio |
 | `MACD_Hist` | `EMA(12) - EMA(26) - Signal(9)` | Mean-reverting around 0 |
+| `Volume_Ratio` | `Volume / rolling-mean Volume` | Dimensionless ratio |
 | `Return_t1/2/5` | `Daily_Return[T-N]` | Stationary by inheritance |
 
 ### 5. Neural Network Architecture
 
 ```
-Input(10)
+Input(11)
   Dense(128, ReLU) → BatchNormalization → Dropout(0.30)
   Dense(64,  ReLU) → BatchNormalization → Dropout(0.20)
   Dense(32,  ReLU) → Dropout(0.15)

@@ -14,6 +14,7 @@ Plots produced
 import os
 
 import matplotlib
+
 matplotlib.use("Agg")   # must be set before importing pyplot
 
 import matplotlib.pyplot as plt

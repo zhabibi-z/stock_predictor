@@ -10,15 +10,17 @@ aggregate_walk_forward) live here because they evaluate model outputs.
 """
 
 import numpy as np
-from sklearn.naive_bayes       import GaussianNB
-from sklearn.linear_model      import Ridge
-from sklearn.utils.class_weight import compute_sample_weight, compute_class_weight
-from sklearn.metrics           import (
-    accuracy_score, f1_score, precision_score, recall_score,
-)
 import tensorflow as tf
+from sklearn.linear_model import Ridge
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
+from sklearn.naive_bayes import GaussianNB
+from sklearn.utils.class_weight import compute_class_weight, compute_sample_weight
 from tensorflow import keras
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Model 1 — Gaussian Naive Bayes
