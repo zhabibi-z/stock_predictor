@@ -61,7 +61,8 @@ from src.reporting      import (
 )
 from src.tuning         import tune_threshold, threshold_report
 from src.backtester     import (
-    purged_walk_forward_splits, three_way_split, run_backtest, print_backtest_report,
+    purged_walk_forward_splits, three_way_split, run_backtest,
+    print_backtest_report, cost_sensitivity, print_cost_sensitivity,
 )
 from src.visualization  import (
     plot_equity_curves, plot_confusion_matrix, plot_drawdown,
@@ -418,10 +419,12 @@ def main() -> None:
     print_table("HOLDOUT — class balancing x threshold ablation", HEADER,
                 [fmt_row_ci(r) for r in ablation_rows])
 
-    # ── STEP 8: Vectorized Backtesting  (long-only, frictionless, on the HOLDOUT) ─
-    _banner(8, "Vectorized Backtesting  (long-only, frictionless, HOLDOUT only)")
-    print("      NOTE: backtest realism (execution lag, costs, benchmark risk metrics) is Phase 3 —")
-    print("      this step only makes the SIGNAL SOURCE honest (holdout, canonical config).")
+    # ── STEP 8: Vectorized Backtesting  (long-only, lagged, costed, on the HOLDOUT) ─
+    EXECUTION_LAG = bt["execution_lag"]
+    COSTS_BPS     = bt["costs_bps"]
+    COST_GRID     = tuple(bt["cost_sensitivity_grid"])
+    _banner(8, f"Vectorized Backtesting  (lag={EXECUTION_LAG} bar, "
+               f"costs={COSTS_BPS}bps/side, HOLDOUT only)")
 
     fwd_ret_h = fwd_ret_all[holdout_idx]
     al_model_h = train_always_long(X_train_h, y_train_h)
@@ -445,14 +448,21 @@ def main() -> None:
         ("Neural Network (MLP, representative seed)", mlp_preds_h),
     ]
     for name, preds in backtest_models:
-        result = run_backtest(preds, fwd_ret_h, bt["risk_free_rate"])
+        result = run_backtest(preds, fwd_ret_h, bt["risk_free_rate"],
+                               execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS)
         print_backtest_report(name, result)
+        sens = cost_sensitivity(preds, fwd_ret_h, bt["risk_free_rate"],
+                                 execution_lag=EXECUTION_LAG, cost_grid=COST_GRID)
+        print_cost_sensitivity(name, sens)
 
     # ── STEP 9: Visualisation ─────────────────────────────────────────────────
     _banner(9, f"Visualisation  (saving plots to '{PLOTS_DIR}/', HOLDOUT predictions)")
-    bt_list = [run_backtest(nb_preds_h, fwd_ret_h, bt["risk_free_rate"]),
-               run_backtest(lr_preds_h, fwd_ret_h, bt["risk_free_rate"]),
-               run_backtest(mlp_preds_h, fwd_ret_h, bt["risk_free_rate"])]
+    bt_list = [run_backtest(nb_preds_h, fwd_ret_h, bt["risk_free_rate"],
+                             execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS),
+               run_backtest(lr_preds_h, fwd_ret_h, bt["risk_free_rate"],
+                             execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS),
+               run_backtest(mlp_preds_h, fwd_ret_h, bt["risk_free_rate"],
+                             execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS)]
     labels = ["Naive Bayes", "Logistic Regression", "Neural Network"]
 
     plot_equity_curves(bt_list, labels, PLOTS_DIR)

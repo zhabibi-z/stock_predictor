@@ -42,6 +42,9 @@ neural_network:
 
 backtest:
   risk_free_rate: 0.04
+  execution_lag: 1
+  costs_bps: 5
+  cost_sensitivity_grid: [0, 1, 5, 10]
 
 general:
   random_seed: 42

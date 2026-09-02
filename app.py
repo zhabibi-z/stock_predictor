@@ -227,7 +227,7 @@ def _backtest_row(bt: dict, model_name: str) -> None:
     c3.metric("Sharpe Ratio",    f"{bt['sharpe']:.4f}")
     c4.metric("Max Drawdown",    f"{bt['max_drawdown']:.2f} %")
     c5.metric("Win Rate",        f"{bt['win_rate']:.2f} %")
-    c6.metric("Trades",          f"{bt['n_trades']:,}")
+    c6.metric("Days Long",       f"{bt['days_long']:,}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
