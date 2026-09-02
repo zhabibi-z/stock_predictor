@@ -35,7 +35,7 @@ from src.data_loader    import load_or_download
 from src.features       import engineer_features
 from src.models         import (
     train_naive_bayes, predict_naive_bayes,
-    train_ridge, predict_ridge_direction,
+    train_logistic, predict_logistic,
     train_mlp, predict_mlp,
     compute_metrics, aggregate_walk_forward,
 )
@@ -97,16 +97,14 @@ def _run_pipeline(ticker: str, start: str, end: str) -> dict:
     """
     Execute the full ML pipeline and return a structured results dict.
 
-    NB and Ridge are trained on all folds.  The Neural Network is trained
-    on the final fold only to keep interactive runtime reasonable.
+    NB and Logistic Regression are trained on all folds.  The Neural Network
+    is trained on the final fold only to keep interactive runtime reasonable.
     """
     np.random.seed(RANDOM_SEED)
 
     data        = _fetch_and_engineer(ticker, start, end)
     X_all       = data[FEATURE_COLS].values
     y_all       = data["Target"].values
-    close_all   = data["Close"].values.ravel()
-    nxt_cls_all = data["Next_Close"].values.ravel()
     fwd_ret_all = data["Fwd_Return"].values.ravel()
 
     splits  = purged_walk_forward_splits(len(X_all), N_SPLITS, PURGE_GAP)
@@ -121,21 +119,17 @@ def _run_pipeline(ticker: str, start: str, end: str) -> dict:
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
         is_final = fold_idx == n_folds - 1
         tag      = f"Fold {fold_idx + 1}/{n_folds}{'  —  final fold' if is_final else ''}"
-        prog.progress((fold_idx + 0.5) / n_folds, text=f"Training {tag}  (Naive Bayes + Ridge)…")
+        prog.progress((fold_idx + 0.5) / n_folds, text=f"Training {tag}  (Naive Bayes + Logistic Regression)…")
 
         X_train, X_test = _scale_fold(X_all, train_idx, test_idx)
         y_train  = y_all[train_idx]
         y_test   = y_all[test_idx]
-        y_reg_tr = nxt_cls_all[train_idx]
-        tc_test  = close_all[test_idx]
 
         nb_preds = predict_naive_bayes(train_naive_bayes(X_train, y_train), X_test)
-        lr_preds = predict_ridge_direction(
-            train_ridge(X_train, y_reg_tr, y_train, alpha=1.0), X_test, tc_test,
-        )
+        lr_preds = predict_logistic(train_logistic(X_train, y_train), X_test)
 
-        fold_metrics["nb"].append(compute_metrics("Naive Bayes",              y_test, nb_preds))
-        fold_metrics["lr"].append(compute_metrics("Linear Regression (Ridge)", y_test, lr_preds))
+        fold_metrics["nb"].append(compute_metrics("Naive Bayes",         y_test, nb_preds))
+        fold_metrics["lr"].append(compute_metrics("Logistic Regression", y_test, lr_preds))
 
         if is_final:
             prog.progress(0.85, text="Training Neural Network  (final fold)…")
@@ -162,7 +156,7 @@ def _run_pipeline(ticker: str, start: str, end: str) -> dict:
     bt_nn = run_backtest(final_nn_preds, final_fwd_ret, RISK_FREE_RATE)
 
     plots_dir    = os.path.join(ROOT_DIR, PLOTS_DIR)
-    model_labels = ["Naive Bayes", "Ridge", "Neural Network"]
+    model_labels = ["Naive Bayes", "Logistic Regression", "Neural Network"]
     bt_list      = [bt_nb, bt_lr, bt_nn]
 
     plot_equity_curves(bt_list, model_labels, plots_dir)
@@ -276,7 +270,7 @@ with st.sidebar:
 
     with st.expander("Model Architecture", expanded=False):
         st.caption("**Naive Bayes** — GaussianNB + balanced sample_weight")
-        st.caption("**Ridge** — price forecast → direction + balanced weights")
+        st.caption("**Logistic Regression** — direction classifier + balanced class weights")
         st.caption("**MLP** — 128 → 64 → 32, BatchNorm, Dropout, ReduceLROnPlateau")
 
 
@@ -286,7 +280,7 @@ with st.sidebar:
 
 st.title("📈 ML Stock Direction & Backtest Dashboard")
 st.caption(
-    "Walk-forward validated ML pipeline  ·  Naive Bayes  ·  Ridge Regression  ·  Neural Network  "
+    "Walk-forward validated ML pipeline  ·  Naive Bayes  ·  Logistic Regression  ·  Neural Network  "
     "| Backtested against buy-and-hold with Sharpe ratio, max drawdown, and equity-curve analysis."
 )
 st.divider()

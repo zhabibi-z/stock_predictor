@@ -1,34 +1,38 @@
 """Stage 3 — Model Definitions, Training, and Classification Metrics.
 
 Three models of increasing complexity:
-  1. GaussianNB        — probabilistic baseline, balanced sample_weight
-  2. Ridge Regression  — price-forecast → direction, balanced sample_weight
-  3. MLP               — 128→64→32, BatchNorm, Dropout, ReduceLROnPlateau
+  1. GaussianNB          — probabilistic baseline, optional balanced sample_weight
+  2. Logistic Regression — direct classifier, optional balanced class_weight
+  3. MLP                 — 128→64→32, BatchNorm, Dropout, ReduceLROnPlateau
+
+Every model takes a `balanced: bool` flag rather than hardcoding balanced
+weighting: on a stock with a ~54/46 up/down split, that split is the equity
+risk premium, not class imbalance — forcing balance makes a model bet
+against secular drift. Both settings should be run and compared, not one
+silently chosen.
 
 Metrics (compute_metrics, print_report, print_walk_forward_report,
 aggregate_walk_forward) live here because they evaluate model outputs.
 """
 
 import numpy as np
-import tensorflow as tf
-from sklearn.linear_model import Ridge
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    precision_score,
-    recall_score,
+from sklearn.naive_bayes        import GaussianNB
+from sklearn.linear_model       import LogisticRegression
+from sklearn.utils.class_weight import compute_sample_weight, compute_class_weight
+from sklearn.metrics            import (
+    accuracy_score, f1_score, precision_score, recall_score,
 )
-from sklearn.naive_bayes import GaussianNB
-from sklearn.utils.class_weight import compute_class_weight, compute_sample_weight
+import tensorflow as tf
 from tensorflow import keras
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Model 1 — Gaussian Naive Bayes
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train_naive_bayes(X_train: np.ndarray, y_train: np.ndarray) -> GaussianNB:
+def train_naive_bayes(X_train: np.ndarray, y_train: np.ndarray, balanced: bool = True) -> GaussianNB:
     """
-    Fit GaussianNB with balanced sample weights.
+    Fit GaussianNB, optionally with balanced sample weights.
 
     GaussianNB has no class_weight parameter, so balanced weighting is
     achieved via sample_weight in fit().  compute_sample_weight("balanced")
@@ -36,7 +40,7 @@ def train_naive_bayes(X_train: np.ndarray, y_train: np.ndarray) -> GaussianNB:
     frequency, giving minority-class days the same aggregate influence as
     majority-class days.
     """
-    weights = compute_sample_weight("balanced", y_train)
+    weights = compute_sample_weight("balanced", y_train) if balanced else None
     model   = GaussianNB()
     model.fit(X_train, y_train, sample_weight=weights)
     return model
@@ -51,37 +55,37 @@ def predict_proba_naive_bayes(model: GaussianNB, X_test: np.ndarray) -> np.ndarr
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Model 2 — Ridge Regression → binary direction
+# Model 2 — Logistic Regression
 # ─────────────────────────────────────────────────────────────────────────────
+# Replaces the earlier Ridge-regression-on-price-then-threshold path: Ridge
+# regressed Next_Close (a dollar level dominated by SMA_5/SMA_20, R²=0.959
+# vs 0.973 for a naive "tomorrow=today" forecast) and derived a direction
+# from forecast > today_close — a laundered random walk, not a direction
+# model, and "balanced" sample weights on an MSE loss over dollar prices
+# never meant anything. Logistic Regression is a direct classifier: its
+# class_weight="balanced" option is the real, principled version of what
+# the old code's weighting scheme only imitated.
 
-def train_ridge(
-    X_train:     np.ndarray,
-    y_reg_train: np.ndarray,
-    y_dir_train: np.ndarray,
-    alpha:       float = 1.0,
-) -> Ridge:
-    """
-    Fit Ridge with balanced sample weights derived from direction labels.
-
-    Ridge has no class_weight parameter (it's a regressor), so weights come
-    from the binary direction labels y_dir_train.  L2 regularisation shrinks
-    correlated SMA/EMA coefficients without zeroing any predictor — giving
-    better OOS forecasts than plain OLS on these highly correlated features.
-    """
-    weights = compute_sample_weight("balanced", y_dir_train)
-    model   = Ridge(alpha=alpha)
-    model.fit(X_train, y_reg_train, sample_weight=weights)
+def train_logistic(
+    X_train:  np.ndarray,
+    y_train:  np.ndarray,
+    balanced: bool  = True,
+    max_iter: int   = 1000,
+) -> LogisticRegression:
+    model = LogisticRegression(
+        class_weight="balanced" if balanced else None,
+        max_iter=max_iter,
+    )
+    model.fit(X_train, y_train)
     return model
 
 
-def predict_ridge_direction(
-    model:       Ridge,
-    X_test:      np.ndarray,
-    today_close: np.ndarray,
-) -> np.ndarray:
-    """Forecast tomorrow's close; return 1 where forecast > today_close."""
-    forecast = model.predict(X_test)
-    return (forecast > today_close).astype(int)
+def predict_proba_logistic(model: LogisticRegression, X_test: np.ndarray) -> np.ndarray:
+    return model.predict_proba(X_test)[:, 1]
+
+
+def predict_logistic(model: LogisticRegression, X_test: np.ndarray, threshold: float = 0.50) -> np.ndarray:
+    return (predict_proba_logistic(model, X_test) >= threshold).astype(int)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,14 +120,15 @@ def _build_mlp(input_dim: int, seed: int = 42) -> keras.Model:
 def train_mlp(
     X_train:    np.ndarray,
     y_train:    np.ndarray,
-    epochs:     int = 150,
-    batch_size: int = 32,
-    patience:   int = 15,
-    seed:       int = 42,
+    epochs:     int  = 150,
+    batch_size: int  = 32,
+    patience:   int  = 15,
+    seed:       int  = 42,
+    balanced:   bool = True,
 ) -> keras.Model:
     """
-    Train the MLP with EarlyStopping, ReduceLROnPlateau, and balanced
-    class weights.
+    Train the MLP with EarlyStopping, ReduceLROnPlateau, and optionally
+    balanced class weights.
 
     Validation split uses the chronologically latest 10 % of the training
     fold (Keras takes validation_split from the tail), so no test-fold data
@@ -131,9 +136,11 @@ def train_mlp(
     preventing oscillation near the optimum that a fixed LR causes late in
     training.
     """
-    classes = np.unique(y_train)
-    raw_w   = compute_class_weight("balanced", classes=classes, y=y_train)
-    cw_dict = dict(zip(classes.tolist(), raw_w.tolist()))
+    cw_dict = None
+    if balanced:
+        classes = np.unique(y_train)
+        raw_w   = compute_class_weight("balanced", classes=classes, y=y_train)
+        cw_dict = dict(zip(classes.tolist(), raw_w.tolist()))
 
     model = _build_mlp(X_train.shape[1], seed=seed)
     model.fit(

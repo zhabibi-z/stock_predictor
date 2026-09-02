@@ -130,9 +130,21 @@ def engineer_features(
     data["Fwd_Return"] = (data["Next_Close"] - close) / close
 
     data["Daily_Return"] = close.pct_change()
-    data["SMA_5"]        = close.rolling(window=sma_short, min_periods=sma_short).mean()
-    data["SMA_20"]       = close.rolling(window=sma_long,  min_periods=sma_long).mean()
-    data["RSI"]          = _compute_rsi(close, window=rsi_window)
+
+    # Close/SMA - 1, not the raw SMA level: a 10-year price series that goes
+    # $26 -> $270 makes any raw-price feature non-stationary — a StandardScaler
+    # fit on an early fold has no way to represent a late-fold price level, so
+    # the scaled feature falls hopelessly out-of-distribution on every test
+    # fold (confirmed empirically: pre-fix train/test z-ranges for SMA_5/SMA_20
+    # had zero overlap on every walk-forward fold). The ratio is scale-invariant
+    # and stays in a comparable range across the whole series; column names are
+    # kept as SMA_5 / SMA_20 for config/model compatibility even though the
+    # values are now ratios, not price levels.
+    sma_short_avg  = close.rolling(window=sma_short, min_periods=sma_short).mean()
+    sma_long_avg   = close.rolling(window=sma_long,  min_periods=sma_long).mean()
+    data["SMA_5"]  = close / sma_short_avg - 1
+    data["SMA_20"] = close / sma_long_avg - 1
+    data["RSI"]    = _compute_rsi(close, window=rsi_window)
 
     bb = _compute_bollinger(close, window=bb_window, num_std=bb_std)
     data["BB_Upper"] = bb["BB_Upper"]
