@@ -53,6 +53,43 @@ def purged_walk_forward_splits(
     return splits
 
 
+def three_way_split(
+    dates,
+    holdout_start:    str,
+    validation_frac:  float,
+    purge_gap:        int = 5,
+) -> tuple:
+    """
+    Partition a date-sorted index into (train_pool_idx, validation_idx, holdout_idx).
+
+    holdout_idx    — every row on/after `holdout_start`. Touched exactly once, at
+                     the end of the pipeline. Never used for tuning of any kind.
+    validation_idx — the tail `validation_frac` of the rows strictly before the
+                     holdout, reserved for threshold/hyperparameter tuning.
+                     Excluded from the walk-forward CV pool below.
+    train_pool_idx — everything else. The purged walk-forward CV folds used for
+                     the walk-forward summary are drawn only from this pool.
+
+    A `purge_gap`-row buffer separates train_pool from validation, and separates
+    validation from the holdout, matching the buffer already enforced between
+    walk-forward train/test folds. When train_pool and validation are later
+    pooled to fit the final holdout model, no internal purge is needed between
+    them — purge gaps only matter at a boundary into data that will be
+    evaluated out-of-sample.
+    """
+    dates = pd.DatetimeIndex(dates)
+    holdout_start_pos = int(np.searchsorted(dates.values, pd.Timestamp(holdout_start).to_datetime64()))
+
+    pre_holdout_end = max(holdout_start_pos - purge_gap, 0)
+    val_n           = int(round(pre_holdout_end * validation_frac))
+    train_pool_end  = max(pre_holdout_end - val_n - purge_gap, 0)
+
+    train_pool_idx = np.arange(0, train_pool_end)
+    validation_idx = np.arange(train_pool_end + purge_gap, pre_holdout_end)
+    holdout_idx    = np.arange(holdout_start_pos, len(dates))
+    return train_pool_idx, validation_idx, holdout_idx
+
+
 def run_backtest(
     signals:        np.ndarray,
     fwd_returns:    np.ndarray,

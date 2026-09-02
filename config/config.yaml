@@ -29,13 +29,16 @@ features:
     - Return_t5
 
 validation:
-  n_splits: 5
+  n_splits: 4
   purge_gap: 5
+  holdout_start: "2024-03-22"
+  validation_frac: 0.15
 
 neural_network:
   epochs: 150
   batch_size: 32
   patience: 15
+  default_seeds: 10
 
 backtest:
   risk_free_rate: 0.04
