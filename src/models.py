@@ -13,7 +13,15 @@ silently chosen.
 
 Metrics (compute_metrics, print_report, print_walk_forward_report,
 aggregate_walk_forward) live here because they evaluate model outputs.
+
+TensorFlow (~600MB installed) is imported lazily, inside the MLP functions
+only, so the NB and Logistic Regression paths — and anything importing this
+module just for metrics — never pay for it.
 """
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 from sklearn.naive_bayes        import GaussianNB
@@ -22,8 +30,9 @@ from sklearn.utils.class_weight import compute_sample_weight, compute_class_weig
 from sklearn.metrics            import (
     accuracy_score, f1_score, precision_score, recall_score,
 )
-import tensorflow as tf
-from tensorflow import keras
+
+if TYPE_CHECKING:
+    from tensorflow import keras
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,25 +101,37 @@ def predict_logistic(model: LogisticRegression, X_test: np.ndarray, threshold: f
 # Model 3 — MLP (Keras)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_mlp(input_dim: int, seed: int = 42) -> keras.Model:
-    tf.random.set_seed(seed)
-    model = keras.Sequential(
-        [
-            keras.layers.Input(shape=(input_dim,)),
-            keras.layers.Dense(128, activation="relu"),
-            keras.layers.BatchNormalization(),
-            keras.layers.Dropout(0.30),
-            keras.layers.Dense(64, activation="relu"),
-            keras.layers.BatchNormalization(),
-            keras.layers.Dropout(0.20),
-            keras.layers.Dense(32, activation="relu"),
-            keras.layers.Dropout(0.15),
-            keras.layers.Dense(1, activation="sigmoid"),
-        ],
-        name="StockMLP_v2",
-    )
+def _build_mlp(
+    input_dim:      int,
+    seed:           int   = 42,
+    hidden_layers:  tuple = (128, 64, 32),
+    dropout_rates:  tuple = (0.30, 0.20, 0.15),
+    learning_rate:  float = 1e-3,
+) -> keras.Model:
+    import tensorflow as tf
+    from tensorflow import keras
+
+    # tf.random.set_seed alone does not reproduce a Keras run: dropout masks,
+    # BatchNorm's running stats update order, and the validation_split shuffle
+    # all draw from sources it doesn't seed. set_random_seed seeds Python's
+    # `random`, numpy, and TF together; enable_op_determinism additionally
+    # forces deterministic kernel selection for ops that otherwise pick a
+    # nondeterministic (faster) implementation. Verified: same seed, same
+    # data, 10 epochs -> bit-identical predictions across two runs.
+    keras.utils.set_random_seed(seed)
+    tf.config.experimental.enable_op_determinism()
+
+    layers = [keras.layers.Input(shape=(input_dim,))]
+    for i, (units, rate) in enumerate(zip(hidden_layers, dropout_rates)):
+        layers.append(keras.layers.Dense(units, activation="relu"))
+        if i < len(hidden_layers) - 1:
+            layers.append(keras.layers.BatchNormalization())
+        layers.append(keras.layers.Dropout(rate))
+    layers.append(keras.layers.Dense(1, activation="sigmoid"))
+
+    model = keras.Sequential(layers, name="StockMLP_v2")
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss="binary_crossentropy",
         metrics=["accuracy"],
     )
@@ -118,13 +139,19 @@ def _build_mlp(input_dim: int, seed: int = 42) -> keras.Model:
 
 
 def train_mlp(
-    X_train:    np.ndarray,
-    y_train:    np.ndarray,
-    epochs:     int  = 150,
-    batch_size: int  = 32,
-    patience:   int  = 15,
-    seed:       int  = 42,
-    balanced:   bool = True,
+    X_train:            np.ndarray,
+    y_train:            np.ndarray,
+    epochs:             int   = 150,
+    batch_size:         int   = 32,
+    patience:           int   = 15,
+    seed:               int   = 42,
+    balanced:           bool  = True,
+    hidden_layers:      tuple = (128, 64, 32),
+    dropout_rates:      tuple = (0.30, 0.20, 0.15),
+    learning_rate:      float = 1e-3,
+    lr_reduce_factor:   float = 0.5,
+    lr_reduce_patience: int   = 7,
+    min_lr:             float = 1e-6,
 ) -> keras.Model:
     """
     Train the MLP with EarlyStopping, ReduceLROnPlateau, and optionally
@@ -132,17 +159,20 @@ def train_mlp(
 
     Validation split uses the chronologically latest 10 % of the training
     fold (Keras takes validation_split from the tail), so no test-fold data
-    leaks in.  ReduceLROnPlateau halves Adam's LR after 7 stagnant epochs,
-    preventing oscillation near the optimum that a fixed LR causes late in
-    training.
+    leaks in.  ReduceLROnPlateau halves Adam's LR after `lr_reduce_patience`
+    stagnant epochs, preventing oscillation near the optimum that a fixed LR
+    causes late in training.
     """
+    from tensorflow import keras
+
     cw_dict = None
     if balanced:
         classes = np.unique(y_train)
         raw_w   = compute_class_weight("balanced", classes=classes, y=y_train)
         cw_dict = dict(zip(classes.tolist(), raw_w.tolist()))
 
-    model = _build_mlp(X_train.shape[1], seed=seed)
+    model = _build_mlp(X_train.shape[1], seed=seed, hidden_layers=hidden_layers,
+                        dropout_rates=dropout_rates, learning_rate=learning_rate)
     model.fit(
         X_train, y_train,
         epochs=epochs,
@@ -155,8 +185,8 @@ def train_mlp(
                 restore_best_weights=True, verbose=0,
             ),
             keras.callbacks.ReduceLROnPlateau(
-                monitor="val_loss", factor=0.5,
-                patience=7, min_lr=1e-6, verbose=0,
+                monitor="val_loss", factor=lr_reduce_factor,
+                patience=lr_reduce_patience, min_lr=min_lr, verbose=0,
             ),
         ],
         verbose=0,

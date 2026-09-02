@@ -39,12 +39,19 @@ neural_network:
   batch_size: 32
   patience: 15
   default_seeds: 10
+  hidden_layers: [128, 64, 32]
+  dropout_rates: [0.30, 0.20, 0.15]
+  learning_rate: 0.001
+  lr_reduce_factor: 0.5
+  lr_reduce_patience: 7
+  min_lr: 0.000001
 
 backtest:
   risk_free_rate: 0.04
   execution_lag: 1
   costs_bps: 5
   cost_sensitivity_grid: [0, 1, 5, 10]
+  trading_days: 252
 
 general:
   random_seed: 42

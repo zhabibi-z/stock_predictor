@@ -17,3 +17,6 @@ ignore = ["E501"]
 # an aligned-column import style — both trip E402/I001 without this.
 "app.py"  = ["E402", "I001"]
 "main.py" = ["E402", "I001"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

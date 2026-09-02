@@ -153,17 +153,25 @@ def _eval_deterministic_models(X_train, y_train, X_test, y_test, daily_ret_test,
     return rows, shuffled_row, rows[0]  # (all rows, shuffled row, always_long row)
 
 
+def _train_mlp_cfg(X_train, y_train, nn_cfg, seed, balanced):
+    """train_mlp, with every architecture/optimizer constant read from config."""
+    return train_mlp(
+        X_train, y_train,
+        epochs=nn_cfg["epochs"], batch_size=nn_cfg["batch_size"], patience=nn_cfg["patience"],
+        seed=seed, balanced=balanced,
+        hidden_layers=tuple(nn_cfg["hidden_layers"]), dropout_rates=tuple(nn_cfg["dropout_rates"]),
+        learning_rate=nn_cfg["learning_rate"], lr_reduce_factor=nn_cfg["lr_reduce_factor"],
+        lr_reduce_patience=nn_cfg["lr_reduce_patience"], min_lr=nn_cfg["min_lr"],
+    )
+
+
 def _eval_mlp_multiseed(X_train, y_train, X_test, y_test, seeds, nn_cfg,
                          threshold=0.50, balanced=CANONICAL_BALANCED):
     """Train the MLP once per seed; return (per-seed CI rows, mean±std row, {seed: preds})."""
     seed_rows = []
     preds_by_seed = {}
     for seed in seeds:
-        model = train_mlp(
-            X_train, y_train,
-            epochs=nn_cfg["epochs"], batch_size=nn_cfg["batch_size"],
-            patience=nn_cfg["patience"], seed=seed, balanced=balanced,
-        )
+        model = _train_mlp_cfg(X_train, y_train, nn_cfg, seed, balanced)
         preds = predict_mlp(model, X_test, threshold=threshold)
         preds_by_seed[seed] = preds
         seed_rows.append(compute_metrics_ci("Neural Network (MLP)", y_test, preds, seed=seed))
@@ -202,8 +210,7 @@ def _tune_all_thresholds(X_tp, y_tp, X_val, y_val, nn_cfg, random_seed):
             _report(name, balanced, t, probs_val)
 
     for balanced in (False, True):
-        model = train_mlp(X_tp, y_tp, epochs=nn_cfg["epochs"], batch_size=nn_cfg["batch_size"],
-                           patience=nn_cfg["patience"], seed=random_seed, balanced=balanced)
+        model = _train_mlp_cfg(X_tp, y_tp, nn_cfg, random_seed, balanced)
         probs_val = predict_proba_mlp(model, X_val)
         t, _ = tune_threshold(y_val, probs_val)
         tuned[("Neural Network (MLP)", balanced)] = t
@@ -404,11 +411,7 @@ def main() -> None:
                 ablation_rows.append(compute_metrics_ci(label, y_holdout, preds, seed=RANDOM_SEED))
 
     for balanced in (False, True):
-        probs = predict_proba_mlp(
-            train_mlp(X_train_h, y_train_h, epochs=nn["epochs"], batch_size=nn["batch_size"],
-                      patience=nn["patience"], seed=RANDOM_SEED, balanced=balanced),
-            X_holdout,
-        )
+        probs = predict_proba_mlp(_train_mlp_cfg(X_train_h, y_train_h, nn, RANDOM_SEED, balanced), X_holdout)
         for thr_label, thr in (("thr=0.50", 0.50),
                                 (f"thr=tuned({tuned[('Neural Network (MLP)', balanced)]:.2f})",
                                  tuned[("Neural Network (MLP)", balanced)])):
@@ -448,20 +451,20 @@ def main() -> None:
         ("Neural Network (MLP, representative seed)", mlp_preds_h),
     ]
     for name, preds in backtest_models:
-        result = run_backtest(preds, fwd_ret_h, bt["risk_free_rate"],
+        result = run_backtest(preds, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                                execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS)
         print_backtest_report(name, result)
-        sens = cost_sensitivity(preds, fwd_ret_h, bt["risk_free_rate"],
+        sens = cost_sensitivity(preds, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                                  execution_lag=EXECUTION_LAG, cost_grid=COST_GRID)
         print_cost_sensitivity(name, sens)
 
     # ── STEP 9: Visualisation ─────────────────────────────────────────────────
     _banner(9, f"Visualisation  (saving plots to '{PLOTS_DIR}/', HOLDOUT predictions)")
-    bt_list = [run_backtest(nb_preds_h, fwd_ret_h, bt["risk_free_rate"],
+    bt_list = [run_backtest(nb_preds_h, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                              execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS),
-               run_backtest(lr_preds_h, fwd_ret_h, bt["risk_free_rate"],
+               run_backtest(lr_preds_h, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                              execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS),
-               run_backtest(mlp_preds_h, fwd_ret_h, bt["risk_free_rate"],
+               run_backtest(mlp_preds_h, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                              execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS)]
     labels = ["Naive Bayes", "Logistic Regression", "Neural Network"]
 

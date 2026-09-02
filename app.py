@@ -93,12 +93,18 @@ def _fetch_and_engineer(ticker: str, start: str, end: str) -> pd.DataFrame:
     )
 
 
+@st.cache_data(show_spinner="Running pipeline…")
 def _run_pipeline(ticker: str, start: str, end: str) -> dict:
     """
     Execute the full ML pipeline and return a structured results dict.
 
     NB and Logistic Regression are trained on all folds.  The Neural Network
     is trained on the final fold only to keep interactive runtime reasonable.
+
+    Cached on (ticker, start, end): re-running with the same inputs (e.g.
+    clicking "Run" again without changing anything) returns the stored
+    result instantly instead of retraining NB + Logistic Regression + the
+    MLP from scratch. Only a new ticker or date range triggers real work.
     """
     np.random.seed(RANDOM_SEED)
 
