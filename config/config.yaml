@@ -39,6 +39,7 @@ neural_network:
   batch_size: 32
   patience: 15
   default_seeds: 10
+  app_seeds: 3   # smaller than default_seeds: app.py trades rigor for interactive speed
   hidden_layers: [128, 64, 32]
   dropout_rates: [0.30, 0.20, 0.15]
   learning_rate: 0.001
