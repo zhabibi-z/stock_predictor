@@ -12,7 +12,7 @@ An earlier version of this README reported a headline MLP accuracy of 52.80% "ne
 pip install -r requirements.txt
 python main.py --seeds 10          # full run — the tables below
 pytest tests/ -v                   # 33 tests, including the leakage check
-ruff check src/ app.py main.py     # lint (1 pre-existing finding, see below)
+ruff check src/ app.py main.py     # lint — clean
 ```
 
 `--seeds 10` trains the MLP 10 times per fold and once more for the holdout (~50-60 fits total, a few minutes on CPU). Use `--seeds 2` for a fast sanity check of the pipeline's mechanics — the point estimates will differ (small-sample MLP variance is part of the finding) but every deterministic model's numbers (`always_long`, `prev_day_momentum`, `shuffled_label`, `Naive Bayes`, `Logistic Regression`) reproduce **exactly**, seed-for-seed, run-for-run.
@@ -140,7 +140,7 @@ streamlit run app.py                  # interactive dashboard
 - **Determinism.** `_build_mlp` calls `keras.utils.set_random_seed()` + `tf.config.experimental.enable_op_determinism()`, not `tf.random.set_seed()` alone — verified by running the identical pipeline twice and diffing (bit-identical outside TensorFlow's own timestamped log lines).
 - **Config-driven.** MLP architecture (layer sizes, dropout rates, learning rate, LR-plateau factor/patience), backtest parameters (execution lag, cost model, trading days per year), and validation split parameters (holdout start, validation fraction, purge gap) all live in `config/config.yaml`. Nothing here is asserted to be "zero magic numbers" — some small constants (e.g. a 0.30–0.70 threshold search grid, a `min_lr` floor) remain as sane function defaults, documented where they appear.
 - **Lazy TensorFlow.** `src/models.py` imports TensorFlow inside the MLP functions only; `import src.models` alone does not pull in the ~600MB dependency, and Naive Bayes / Logistic Regression work without it installed.
-- **Known lint debt.** `ruff check src/ app.py main.py` reports 1 finding: an import-sort ordering complaint in `src/models.py`, which keeps the same aligned-column import style used throughout this codebase rather than `ruff --fix`'s reformatting — left as-is rather than reformatted incidentally while this file was already being rewritten for other reasons.
+- **Lint is clean.** `ruff check src/ app.py main.py` reports zero findings. `main.py`, `app.py`, and `src/models.py` share an aligned-column import style rather than `ruff --fix`'s reformatting; `pyproject.toml`'s per-file-ignores name each one and why.
 - **`app.py`.** `_run_pipeline` is `@st.cache_data`-keyed on `(ticker, start, end)`, so re-running with unchanged inputs returns the stored result instead of retraining. The dashboard's own pipeline still has Phase 1's `is_final` gate and no baseline rows — it wraps an earlier, simpler version of the CLI pipeline and hasn't yet had the same audit applied to it.
 
 ---

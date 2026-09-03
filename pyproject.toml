@@ -15,8 +15,10 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # main.py and app.py import project modules after a sys.path bootstrap, and use
 # an aligned-column import style — both trip E402/I001 without this.
-"app.py"  = ["E402", "I001"]
-"main.py" = ["E402", "I001"]
+"app.py"       = ["E402", "I001"]
+"main.py"      = ["E402", "I001"]
+# src/models.py uses the same aligned-column import style.
+"src/models.py" = ["I001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
