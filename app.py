@@ -355,7 +355,7 @@ with tab_eval:
         img_path = os.path.join(res["plots_dir"], f"confusion_matrix_{safe}.png")
         with col:
             if os.path.exists(img_path):
-                st.image(img_path, caption=label, use_container_width=True)
+                st.image(img_path, caption=label, use_column_width=True)
             else:
                 st.warning(f"Plot not found: {img_path}")
 
@@ -375,13 +375,13 @@ with tab_bt:
     st.subheader("Cumulative Equity Curve")
     eq_path = os.path.join(res["plots_dir"], "equity_curves.png")
     if os.path.exists(eq_path):
-        st.image(eq_path, use_container_width=True)
+        st.image(eq_path, use_column_width=True)
     else:
         st.warning(f"Equity curve plot not found at {eq_path}")
 
     st.subheader("Rolling Drawdown")
     dd_path = os.path.join(res["plots_dir"], "drawdown.png")
     if os.path.exists(dd_path):
-        st.image(dd_path, use_container_width=True)
+        st.image(dd_path, use_column_width=True)
     else:
         st.warning(f"Drawdown plot not found at {dd_path}")
