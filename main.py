@@ -45,6 +45,7 @@ from sklearn.preprocessing import StandardScaler
 from src                import load_config
 from src.data_loader    import load_or_download
 from src.features       import engineer_features
+from src.fracdiff       import find_min_ffd_d, frac_diff_weights
 from src.models         import (
     train_naive_bayes, predict_proba_naive_bayes,
     train_logistic, predict_logistic, predict_proba_logistic,
@@ -289,6 +290,27 @@ def main() -> None:
     print(f"\n      Walk-forward folds within train pool : {len(splits)}")
     for k, (tr, te) in enumerate(splits):
         print(f"        Fold {k + 1} : train {len(tr):,}  │  test {len(te):,}")
+
+    # ── STEP 3b: Fractional Differentiation Diagnostic  (train_pool only) ────
+    print("\n  " + "─" * 60)
+    print("  Fractional Differentiation Diagnostic  (train_pool only)")
+    print("  " + "─" * 60)
+    train_close = data["Close"].iloc[train_pool_idx]
+    ffd = find_min_ffd_d(train_close, adf_pvalue_max=0.05)
+    full_diff = ffd["table"][-1]  # d grid's last entry is always d=1.0
+    print(f"      Minimum d for stationarity (ADF p <= 0.05) : {ffd['d']:.2f}")
+    print(f"      ADF p-value at that d                      : {ffd['adf_pvalue']:.4g}")
+    print(f"      Correlation with original Close (memory)   : {ffd['corr_with_original']:.3f}")
+    print(f"      For comparison, full differencing (d=1.00) : ADF p-value {full_diff['adf_pvalue']:.4g}, "
+          f"correlation {full_diff['corr_with_original']:.3f}")
+    print("      This is the general, principled version of the Phase 2 SMA_5/SMA_20 fix: "
+          "the minimum")
+    print("      differencing that achieves stationarity, rather than full differencing that "
+          "destroys memory.")
+    print("      Diagnostic only — not wired into FEATURE_COLS. Doing so would add a "
+          f"{len(frac_diff_weights(ffd['d']))}-row")
+    print("      warm-up window that would reshape the already-audited split boundaries; left "
+          "as a follow-up.")
 
     # ── STEP 4: Threshold Tuning  (validation split, holdout untouched) ──────
     _banner(4, "Threshold Tuning  (validation split — never a CV fold, never the holdout)")
