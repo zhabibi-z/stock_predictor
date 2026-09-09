@@ -46,6 +46,7 @@ from src                import load_config
 from src.data_loader    import load_or_download
 from src.features       import engineer_features
 from src.fracdiff       import find_min_ffd_d, frac_diff_weights
+from src.cpcv           import combinatorial_purged_splits, summarize_distribution
 from src.models         import (
     train_naive_bayes, predict_proba_naive_bayes,
     train_logistic, predict_logistic, predict_proba_logistic,
@@ -237,6 +238,8 @@ def main() -> None:
     PURGE_GAP     = v["purge_gap"]
     HOLDOUT_START = v["holdout_start"]
     VAL_FRAC      = v["validation_frac"]
+    CPCV_N_GROUPS      = v["cpcv_n_groups"]
+    CPCV_N_TEST_GROUPS = v["cpcv_n_test_groups"]
     RANDOM_SEED   = g["random_seed"]
     PLOTS_DIR     = g["plots_dir"]
     N_SEEDS       = args.seeds if args.seeds is not None else nn["default_seeds"]
@@ -375,6 +378,44 @@ def main() -> None:
         agg = aggregate_mean_std(rows, "n_folds")
         summary_rows.append(fmt_row_mean_std(agg, "n_folds", "folds"))
     print_table("Walk-Forward Summary — every model, all folds", HEADER, summary_rows)
+
+    # ── STEP 6b: Combinatorial Purged CV  (train_pool, complementary to the walk-forward path) ─
+    cpcv_splits = combinatorial_purged_splits(len(train_pool_idx), CPCV_N_GROUPS, CPCV_N_TEST_GROUPS, PURGE_GAP)
+    print("\n  " + "─" * 68)
+    print(f"  Combinatorial Purged CV  (N={CPCV_N_GROUPS} groups, k={CPCV_N_TEST_GROUPS} test groups, "
+          f"C({CPCV_N_GROUPS},{CPCV_N_TEST_GROUPS})={len(cpcv_splits)} combinations)")
+    print("  " + "─" * 68)
+    print("      Same train_pool as the walk-forward CV above, sliced combinatorially instead of")
+    print("      sequentially — a distribution across many train/test splits, not one path.")
+    print(f"      MLP omitted: even 1 seed per combination would add {len(cpcv_splits)} more MLP fits per run.")
+
+    cpcv_acc = {"always_long": [], "Naive Bayes": [], "Logistic Regression": []}
+    for c_train_idx, c_test_idx in cpcv_splits:
+        X_c_train, X_c_test = _scale(X_all, c_train_idx, c_test_idx)
+        y_c_train = y_all[c_train_idx]
+        y_c_test  = y_all[c_test_idx]
+
+        al_preds = predict_always_long(train_always_long(X_c_train, y_c_train), X_c_test)
+        cpcv_acc["always_long"].append(float((al_preds == y_c_test).mean()))
+
+        nb_probs = predict_proba_naive_bayes(train_naive_bayes(X_c_train, y_c_train, balanced=CANONICAL_BALANCED), X_c_test)
+        nb_preds = (nb_probs >= nb_t).astype(int)
+        cpcv_acc["Naive Bayes"].append(float((nb_preds == y_c_test).mean()))
+
+        lr_model = train_logistic(X_c_train, y_c_train, balanced=CANONICAL_BALANCED)
+        lr_preds = predict_logistic(lr_model, X_c_test, threshold=lr_t)
+        cpcv_acc["Logistic Regression"].append(float((lr_preds == y_c_test).mean()))
+
+    cpcv_rows = []
+    for name, accs in cpcv_acc.items():
+        dist = summarize_distribution(accs)
+        cpcv_rows.append([
+            f"{name} ({dist['n']} combos)",
+            f"{dist['mean']*100:.2f}% ± {dist['std']*100:.2f}",
+            f"[{dist['min']*100:.2f}%, {dist['max']*100:.2f}%]",
+        ])
+    print_table("CPCV Accuracy Distribution — always_long vs. NB vs. LogReg",
+                ["Model", "Mean ± Std", "Range"], cpcv_rows)
 
     if any_leak:
         print("\n  >>> A LEAK WAS DETECTED IN AT LEAST ONE FOLD ABOVE. <<<")
