@@ -177,8 +177,9 @@ def run_backtest(
     n_round_trips = int(np.sum(np.diff(np.concatenate([[0.0], executed])) == 1))
 
     return {
-        "cum_strategy":  pd.Series(cum_strategy),
-        "cum_benchmark": pd.Series(cum_benchmark),
+        "cum_strategy":     pd.Series(cum_strategy),
+        "cum_benchmark":    pd.Series(cum_benchmark),
+        "strategy_returns": strategy_returns,  # raw per-period returns, for DSR (Tier 2)
         "strategy":      strat_stats,
         "benchmark":     bench_stats,
         "win_rate":      round(win_rate, 2),

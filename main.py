@@ -47,6 +47,7 @@ from src.data_loader    import load_or_download
 from src.features       import engineer_features
 from src.fracdiff       import find_min_ffd_d, frac_diff_weights
 from src.cpcv           import combinatorial_purged_splits, summarize_distribution
+from src.dsr            import deflated_sharpe_ratio, probability_of_backtest_overfitting
 from src.models         import (
     train_naive_bayes, predict_proba_naive_bayes,
     train_logistic, predict_logistic, predict_proba_logistic,
@@ -390,6 +391,14 @@ def main() -> None:
     print(f"      MLP omitted: even 1 seed per combination would add {len(cpcv_splits)} more MLP fits per run.")
 
     cpcv_acc = {"always_long": [], "Naive Bayes": [], "Logistic Regression": []}
+    # 8-config ablation matrix (NB/LogReg x balanced x threshold) across the
+    # same combinations, feeding the Probability of Backtest Overfitting below.
+    ablation_config_names = [
+        f"{model} (balanced={b}, thr={t})"
+        for model in ("NB", "LogReg") for b in (False, True) for t in ("0.50", "tuned")
+    ]
+    ablation_matrix = []
+
     for c_train_idx, c_test_idx in cpcv_splits:
         X_c_train, X_c_test = _scale(X_all, c_train_idx, c_test_idx)
         y_c_train = y_all[c_train_idx]
@@ -406,6 +415,17 @@ def main() -> None:
         lr_preds = predict_logistic(lr_model, X_c_test, threshold=lr_t)
         cpcv_acc["Logistic Regression"].append(float((lr_preds == y_c_test).mean()))
 
+        combo_row = []
+        for balanced in (False, True):
+            nb_probs_b = predict_proba_naive_bayes(train_naive_bayes(X_c_train, y_c_train, balanced=balanced), X_c_test)
+            for thr in (0.50, tuned[("Naive Bayes", balanced)]):
+                combo_row.append(float(((nb_probs_b >= thr).astype(int) == y_c_test).mean()))
+        for balanced in (False, True):
+            lr_probs_b = predict_proba_logistic(train_logistic(X_c_train, y_c_train, balanced=balanced), X_c_test)
+            for thr in (0.50, tuned[("Logistic Regression", balanced)]):
+                combo_row.append(float(((lr_probs_b >= thr).astype(int) == y_c_test).mean()))
+        ablation_matrix.append(combo_row)
+
     cpcv_rows = []
     for name, accs in cpcv_acc.items():
         dist = summarize_distribution(accs)
@@ -416,6 +436,21 @@ def main() -> None:
         ])
     print_table("CPCV Accuracy Distribution — always_long vs. NB vs. LogReg",
                 ["Model", "Mean ± Std", "Range"], cpcv_rows)
+
+    pbo = probability_of_backtest_overfitting(np.array(ablation_matrix))
+    print(f"\n      Probability of Backtest Overfitting  (the NB/LogReg half of Phase 7b's balance x "
+          f"threshold ablation — {len(ablation_config_names)} of its 12 configs, MLP omitted for the "
+          f"same cost reason as above — evaluated across the {len(cpcv_splits)} CPCV combinations)")
+    print(f"      PBO = {pbo['pbo']:.3f}  over {pbo['n_splits']} in-sample/out-of-sample bipartitions "
+          f"(mean logit = {pbo['logits_mean']:+.3f})")
+    if pbo["pbo"] > 0.5:
+        print(f"      PBO > 0.5: the in-sample-best of these {len(ablation_config_names)} configs tends to rank BELOW the")
+        print("      out-of-sample median — picking 'the best-looking config' from that ablation")
+        print("      table would, more often than not, have been overfitting, not skill.")
+    else:
+        print("      PBO <= 0.5: the in-sample-best config tends to also do relatively well")
+        print("      out-of-sample — less evidence that picking the best-looking config there")
+        print("      would have been pure overfitting, though this doesn't imply real skill either.")
 
     if any_leak:
         print("\n  >>> A LEAK WAS DETECTED IN AT LEAST ONE FOLD ABOVE. <<<")
@@ -513,6 +548,13 @@ def main() -> None:
         ("Logistic Regression",       lr_preds_h),
         ("Neural Network (MLP, representative seed)", mlp_preds_h),
     ]
+    # n_trials for the Deflated Sharpe Ratio: N_TRIALS_HEADLINE counts only the
+    # models actually compared in this table; N_TRIALS_ABLATION additionally
+    # counts Step 7b's 12-config balance x threshold search (3 baselines with
+    # no variants + NB x4 + LogReg x4 + MLP x4 = 15) — the honest count of
+    # everything this run actually looked at before reporting one number.
+    N_TRIALS_HEADLINE = len(backtest_models)
+    N_TRIALS_ABLATION = 15
     for name, preds in backtest_models:
         result = run_backtest(preds, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                                execution_lag=EXECUTION_LAG, costs_bps=COSTS_BPS)
@@ -520,6 +562,13 @@ def main() -> None:
         sens = cost_sensitivity(preds, fwd_ret_h, bt["risk_free_rate"], trading_days=bt["trading_days"],
                                  execution_lag=EXECUTION_LAG, cost_grid=COST_GRID)
         print_cost_sensitivity(name, sens)
+
+        dsr_headline = deflated_sharpe_ratio(result["strategy_returns"], n_trials=N_TRIALS_HEADLINE)
+        dsr_ablation = deflated_sharpe_ratio(result["strategy_returns"], n_trials=N_TRIALS_ABLATION)
+        print(f"      Deflated Sharpe Ratio (n_trials={N_TRIALS_HEADLINE}) : {dsr_headline['dsr']:.3f}   "
+              f"(SR_hat={dsr_headline['sharpe']:.4f}, SR0={dsr_headline['sr0']:.4f})")
+        print(f"      Deflated Sharpe Ratio (n_trials={N_TRIALS_ABLATION}) : {dsr_ablation['dsr']:.3f}   "
+              f"(SR0 rises to {dsr_ablation['sr0']:.4f} once the ablation search is honestly counted)")
 
     # ── STEP 9: Visualisation ─────────────────────────────────────────────────
     _banner(9, f"Visualisation  (saving plots to '{PLOTS_DIR}/', HOLDOUT predictions)")
