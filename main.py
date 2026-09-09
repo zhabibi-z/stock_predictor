@@ -438,7 +438,7 @@ def main() -> None:
                 ["Model", "Mean ± Std", "Range"], cpcv_rows)
 
     pbo = probability_of_backtest_overfitting(np.array(ablation_matrix))
-    print(f"\n      Probability of Backtest Overfitting  (the NB/LogReg half of Phase 7b's balance x "
+    print(f"\n      Probability of Backtest Overfitting  (the NB/LogReg half of Step 7b's balance x "
           f"threshold ablation — {len(ablation_config_names)} of its 12 configs, MLP omitted for the "
           f"same cost reason as above — evaluated across the {len(cpcv_splits)} CPCV combinations)")
     print(f"      PBO = {pbo['pbo']:.3f}  over {pbo['n_splits']} in-sample/out-of-sample bipartitions "

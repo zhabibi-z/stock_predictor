@@ -11,7 +11,7 @@ An earlier version of this README reported a headline MLP accuracy of 52.80% "ne
 ```bash
 pip install -r requirements.txt
 python main.py --seeds 10          # full run — the tables below
-pytest tests/ -v                   # 33 tests, including the leakage check
+pytest tests/ -v                   # 74 tests, including the leakage check
 ruff check src/ app.py main.py     # lint — clean
 ```
 
@@ -97,6 +97,69 @@ Phase 2 tunes each classifier's decision threshold on the validation split (2022
 
 ---
 
+## Tier 2 — statistical rigor beyond the original audit
+
+Everything above was the original independent-review repair. Three further additions push the same "is this real or luck" question harder, using standard quantitative-finance tools (Lopez de Prado, *Advances in Financial Machine Learning* and the Deflated Sharpe Ratio papers) rather than inventing new ones. None of them were needed to reach the headline finding — they make the case for it considerably harder to argue with.
+
+### Combinatorial Purged CV — is 53% real, or one lucky split?
+
+The walk-forward summary above is one path through `train_pool`: each row tested exactly once. `src/cpcv.py` partitions the same `train_pool` into 6 groups and evaluates all `C(6,2)=15` combinations of 2 held-out test groups (purging training rows within the purge gap of any test boundary), giving a *distribution* instead of one number:
+
+```
++---------------------------------+---------------+------------------+
+| Model                           | Mean ± Std    | Range            |
++---------------------------------+---------------+------------------+
+| always_long (15 combos)         | 53.26% ± 1.50 | [50.68%, 55.92%] |
+| Naive Bayes (15 combos)         | 52.93% ± 1.53 | [49.66%, 55.50%] |
+| Logistic Regression (15 combos) | 47.56% ± 1.97 | [43.74%, 50.68%] |
++---------------------------------+---------------+------------------+
+```
+
+Logistic Regression's entire 15-combination range sits at or below `always_long`'s entire range — this isn't one unlucky walk-forward fold, it holds across 15 independently-purged resamples of the same data. MLP is omitted (15x more MLP fits per run); `main.py` prints exactly why.
+
+### Deflated Sharpe Ratio — even the winner's Sharpe isn't real
+
+The backtest table's Sharpe ratios are single point estimates. `src/dsr.py` implements the Deflated Sharpe Ratio (DSR): the probability that an observed Sharpe exceeds what pure luck would produce, given how many candidates were actually compared (more candidates → higher bar). Run twice — once counting only the 6-model headline table, once honestly counting Step 7b's full 12-config balance × threshold ablation:
+
+```
++----------------------+---------------+----------------+
+| Model                | DSR (n=6)     | DSR (n=15)     |
++----------------------+---------------+----------------+
+| always_long          | 0.559         | 0.374          |
+| prev_day_momentum    | 0.401         | 0.235          |
+| shuffled_label       | 0.340         | 0.188          |
+| Naive Bayes          | 0.267         | 0.137          |
+| Logistic Regression  | 0.284         | 0.149          |
+| Neural Network (MLP) | 0.189         | 0.088          |
++----------------------+---------------+----------------+
+```
+
+**Every model's DSR is well below any normal significance bar (typically ~0.95), including `always_long` — the outright winner.** Its observed Sharpe (0.974) is not statistically distinguishable from luck once the number of models actually compared is honestly counted, and drops further once the ablation search counts too. This is a stronger statement than "it loses on average": even the best-performing strategy here doesn't clear the bar for a real result.
+
+### Probability of Backtest Overfitting — was the ablation table itself overfit?
+
+Phase 2's balance × threshold ablation tried 12 configurations before Phase 2 picked one canonical path. `src/dsr.py`'s `probability_of_backtest_overfitting` (CSCV) checks whether picking "the best-looking config" from a search like that is usually overfitting: split the CPCV combinations into every possible in-sample/out-of-sample bipartition, and see whether the in-sample winner tends to rank below the out-of-sample median.
+
+```
+PBO = 0.003, over 6435 bipartitions, on the NB/LogReg half of that ablation (8 of its 12 configs)
+```
+
+PBO this low means the in-sample-best of those 8 configs is *not* an overfitting artifact — its relative ranking is stable across resamples. That is a narrower claim than "the model has skill" (DSR above already answers that question, negatively): it means the balance/threshold choice's effect on ranking is a structural property of the modeling choice, not resampling noise.
+
+### Fractional differentiation — the general fix for the SMA_5/SMA_20 problem
+
+Phase 2 fixed `SMA_5`/`SMA_20`'s non-stationarity with a hand-picked `Close/SMA − 1` ratio. `src/fracdiff.py` implements Lopez de Prado's Fixed-Width Window Fractional Differentiation: the *general* version of that fix — grid-search the minimum differencing order d that passes an Augmented Dickey-Fuller stationarity test, rather than hand-picking a transform that happens to work. Run on `train_pool`'s actual `Close` series (`main.py` Step 3b, train-only — same rule as every other tuned parameter here):
+
+```
+d = 0.25 passes ADF (p = 0.0155) at 0.940 correlation with the original price.
+Full differencing (d = 1.00, what Daily_Return already amounts to) passes ADF trivially
+(p ≈ 0) but preserves almost none of it (0.023 correlation).
+```
+
+This is a real, measured version of the stationarity-vs-memory tradeoff the technique exists to improve — not a synthetic example. It's reported as a diagnostic only, not wired into `FEATURE_COLS`: at this d the FFD window is ~445 rows wide, which would eat deeply into the three-way split's warm-up budget and requires reconciling against split boundaries every other phase depends on. A genuine follow-up, left undone rather than rushed.
+
+---
+
 ## Methodology
 
 ```
@@ -131,7 +194,7 @@ Phase 2 tunes each classifier's decision threshold on the validation split (2022
 ## Engineering
 
 ```bash
-pytest tests/ -v                      # 33 tests
+pytest tests/ -v                      # 74 tests
 ruff check src/ app.py main.py        # lint
 streamlit run app.py                  # interactive dashboard
 ```
@@ -141,7 +204,10 @@ streamlit run app.py                  # interactive dashboard
 - **Config-driven.** MLP architecture (layer sizes, dropout rates, learning rate, LR-plateau factor/patience), backtest parameters (execution lag, cost model, trading days per year), and validation split parameters (holdout start, validation fraction, purge gap) all live in `config/config.yaml`. Nothing here is asserted to be "zero magic numbers" — some small constants (e.g. a 0.30–0.70 threshold search grid, a `min_lr` floor) remain as sane function defaults, documented where they appear.
 - **Lazy TensorFlow.** `src/models.py` imports TensorFlow inside the MLP functions only; `import src.models` alone does not pull in the ~600MB dependency, and Naive Bayes / Logistic Regression work without it installed.
 - **Lint is clean.** `ruff check src/ app.py main.py` reports zero findings. `main.py`, `app.py`, and `src/models.py` share an aligned-column import style rather than `ruff --fix`'s reformatting; `pyproject.toml`'s per-file-ignores name each one and why.
-- **`app.py`.** `_run_pipeline` is `@st.cache_data`-keyed on `(ticker, start, end)`, so re-running with unchanged inputs returns the stored result instead of retraining. The dashboard's own pipeline still has Phase 1's `is_final` gate and no baseline rows — it wraps an earlier, simpler version of the CLI pipeline and hasn't yet had the same audit applied to it.
+- **`app.py`.** `_run_pipeline` is `@st.cache_data`-keyed on `(ticker, start, end)`, so re-running with unchanged inputs returns the stored result instead of retraining. It now shares the CLI's honesty baseline — `always_long`/`prev_day_momentum`/`shuffled_label` in every table, a leak-check warning banner, Wilson/bootstrap CIs on the final-fold report, and a multi-seed MLP (`neural_network.app_seeds`, default 3 — smaller than the CLI's 10, trading rigor for interactive speed; a caption says so and points to `python main.py --seeds 10`). It still doesn't attempt the CLI's three-way holdout split, validation-tuned thresholds, CPCV, or DSR/PBO — those require real wall-clock time no interactive dashboard should ask a user to wait through.
+- **A headless smoke test** (`tests/test_app_smoke.py`, via Streamlit's own `AppTest`) actually loads `app.py` and clicks "Run Quant Pipeline" — the test that would have caught a real bug that shipped invisibly for the app's entire history: `st.image(..., use_container_width=True)` doesn't exist on `streamlit==1.35.0` (the pin in `requirements.txt`), only on a newer version that had drifted into local dev environments. Nothing had ever launched the app against the actually-pinned dependency until this test did.
+- **Pinned-dependency verification is real, not assumed.** Local development on this repo drifted significantly from `requirements.txt` (newer numpy/pandas/scikit-learn/TensorFlow/Streamlit than pinned) — which is *how* the `st.image` bug above went unnoticed. Every Tier 1/Tier 2 change was re-verified end-to-end (full test suite, and for Tier 1, the full CLI pipeline) in a fresh venv built from the exact pinned `requirements.txt`, not just locally. It caught real, otherwise-invisible bugs twice: the `st.image` crash, and a newer `statsmodels` keyword (`result_object=True`) that doesn't exist in the pinned `statsmodels==0.14.2`.
+- **Two new pinned dependencies, both justified and verified.** `scipy==1.13.1` (already an indirect dependency of scikit-learn; used directly now for the normal distribution's CDF/PPF in the Deflated Sharpe Ratio) and `statsmodels==0.14.2` (the Augmented Dickey-Fuller test for fractional-differentiation order selection — the standard tool for this, not reimplemented by hand).
 
 ---
 
@@ -156,13 +222,16 @@ stock_predictor/
 ├── src/
 │   ├── data_loader.py         # cached OHLCV download
 │   ├── features.py            # 11 indicators, zero leakage
+│   ├── fracdiff.py            # fractional differentiation (stationarity, Tier 2)
 │   ├── baselines.py           # always_long, prev_day_momentum, shuffled_label
 │   ├── models.py              # NB, Logistic Regression, MLP
 │   ├── tuning.py              # validation-split threshold selection
 │   ├── reporting.py           # CI-aware metrics tables
 │   ├── backtester.py          # splits + lagged, costed backtest engine
+│   ├── cpcv.py                # Combinatorial Purged CV (Tier 2)
+│   ├── dsr.py                 # Deflated Sharpe Ratio + PBO (Tier 2)
 │   └── visualization.py       # equity curves, drawdown, confusion matrices
-├── tests/                     # pytest suite (33 tests)
+├── tests/                     # pytest suite (74 tests)
 ├── app.py                     # Streamlit dashboard
 ├── main.py                    # CLI pipeline — the tables in this README
 └── requirements.txt
