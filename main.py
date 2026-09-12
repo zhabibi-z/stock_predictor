@@ -21,7 +21,9 @@ Stages
 6. Walk-Forward Summary    — mean ± std across folds, CI on every figure
 7. Holdout Report          — the only evaluation on unseen data, once,
                               plus the balance/threshold ablation in full
-8. Backtesting             — Sharpe, max drawdown, equity curves
+8. Backtesting             — Sharpe, max drawdown, equity curves;
+                              8b: per-regime accuracy split by 20-day
+                              realized vol quartile (conditional skill)
 9. Visualisation           — plots saved to plots/
 
 Usage
@@ -69,6 +71,9 @@ from src.backtester     import (
 )
 from src.visualization  import (
     plot_equity_curves, plot_confusion_matrix, plot_drawdown,
+)
+from src.regime         import (
+    holdout_realized_vol, regime_report, beats_always_long, print_regime_table,
 )
 
 warnings.filterwarnings("ignore")
@@ -539,6 +544,33 @@ def main() -> None:
     lr_preds_h = predict_logistic(
         train_logistic(X_train_h, y_train_h, balanced=CANONICAL_BALANCED), X_holdout, threshold=lr_t,
     )
+
+    # ── STEP 8b: Volatility-Regime Conditional Accuracy ──────────────────────
+    print("\n  " + "─" * 66)
+    print("  Volatility-Regime Conditional Accuracy  (holdout, 4 quartiles by 20-day realized vol)")
+    print("  " + "─" * 66)
+    print("      Key question: does any model show conditional skill in a specific volatility")
+    print("      regime, even though none beats always_long on average?")
+    print("      Regimes are defined from price data only — no model information used.\n")
+
+    rv_h = holdout_realized_vol(daily_ret_all, holdout_idx)
+    regime_preds = {
+        "always_long":               al_preds_h,
+        "prev_day_momentum":         pm_preds_h,
+        "Naive Bayes":               nb_preds_h,
+        "Logistic Regression":       lr_preds_h,
+        f"MLP (seed {RANDOM_SEED})": mlp_preds_h,
+    }
+    regime_rows, quartile_edges = regime_report(y_holdout, regime_preds, rv_h)
+    print_regime_table(regime_rows, quartile_edges)
+
+    wins = beats_always_long(regime_rows)
+    print()
+    for model, qs in wins.items():
+        if qs:
+            print(f"      {model} beats always_long in: {', '.join(qs)}")
+        else:
+            print(f"      {model}: does not beat always_long in any volatility quartile")
 
     backtest_models = [
         ("always_long",               al_preds_h),
