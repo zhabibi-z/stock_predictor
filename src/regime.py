@@ -97,8 +97,12 @@ def print_regime_table(
     quartile_edges: np.ndarray,
     n_quartiles:    int = 4,
 ) -> None:
-    q_labels = [f"Q{q + 1} ({'Low' if q == 0 else 'High' if q == n_quartiles - 1 else ''}vol)".strip()
-                for q in range(n_quartiles)]
+    q_labels = [
+        "Q1 (Low vol)" if q == 0
+        else f"Q{n_quartiles} (High vol)" if q == n_quartiles - 1
+        else f"Q{q + 1}"
+        for q in range(n_quartiles)
+    ]
     header   = ["Model"] + q_labels + ["Overall"]
     col_w    = [42] + [13] * n_quartiles + [10]
 

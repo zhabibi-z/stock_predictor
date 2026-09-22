@@ -11,7 +11,7 @@ An earlier version of this README reported a headline MLP accuracy of 52.80% "ne
 ```bash
 pip install -r requirements.txt
 python main.py --seeds 10          # full run — the tables below
-pytest tests/ -v                   # 74 tests, including the leakage check
+pytest tests/ -v                   # 86 tests, including the leakage check
 ruff check src/ app.py main.py     # lint — clean
 ```
 
@@ -157,6 +157,38 @@ Full differencing (d = 1.00, what Daily_Return already amounts to) passes ADF tr
 ```
 
 This is a real, measured version of the stationarity-vs-memory tradeoff the technique exists to improve — not a synthetic example. It's reported as a diagnostic only, not wired into `FEATURE_COLS`: at this d the FFD window is ~445 rows wide, which would eat deeply into the three-way split's warm-up budget and requires reconciling against split boundaries every other phase depends on. A genuine follow-up, left undone rather than rushed.
+
+---
+
+## Tier 3 — volatility-regime conditional accuracy
+
+All the evidence above is unconditional: no model beats `always_long` on average, across the full holdout. A natural follow-up is whether any model shows **conditional** skill in a specific market regime — even if it loses on average, does it have edge when volatility is elevated (or suppressed)?
+
+`src/regime.py` splits the holdout into four equal-sized groups by 20-day realized volatility (rolling std of daily returns, computed on the full series and extracted at holdout dates). Regimes are defined purely from price data — no model information used to choose them. `python main.py` runs this as Step 8b, immediately after all holdout predictions are in hand.
+
+```
+Volatility-Regime Conditional Accuracy — holdout, 4 quartiles by 20-day realized vol
++------------------------------------------+-------------+-------------+-------------+-------------+----------+
+|                  Model                   | Q1 (Low vol)|      Q2     |      Q3     |Q4 (High vol)| Overall  |
++------------------------------------------+-------------+-------------+-------------+-------------+----------+
+| always_long                              |    56.31%   |    56.86%   |    55.88%   |    58.25%   |  56.83%  |
+| prev_day_momentum                        |    50.49%   |    44.12%   |    56.86%   |    57.28%   |  52.20%  |
+| Naive Bayes                              |    56.31%   |    56.86%   |    50.00%   |    52.43%   |  53.90%  |
+| Logistic Regression                      |    43.69%   |    47.06%   |    49.02%   |    37.86%   |  44.39%  |
++------------------------------------------+-------------+-------------+-------------+-------------+----------+
+N per quartile: 103 | 102 | 102 | 103
+Vol quartile edges (20-day realized vol, annualized): 1.285%, 1.551%, 1.860%
+MLP omitted — TF/macOS Eigen-threadpool deadlock on this machine; NB/LogReg/baselines are deterministic.
+```
+
+**Findings:**
+
+- **No model beats `always_long` consistently across regimes.** `prev_day_momentum` edges it in Q3 (56.86% vs 55.88%), but that single-quartile result has no statistical significance on 102 rows.
+- **Naive Bayes matches `always_long` exactly in Q1 and Q2** (56.31% / 56.86%). At its tuned threshold (0.43), NB predicts UP on essentially every low-volatility day — its accuracy in calm regimes is `always_long`'s accuracy by construction.
+- **Logistic Regression collapses in high-vol regimes** (37.86% in Q4 — *worse* than random). Its tuned threshold (0.58) turns it into a de facto bear-day predictor; when high-vol periods are up-heavy (Q4: 58.25% UP days), that directional bet backfires badly.
+- **The `always_long` baseline is stable** (55.88%–58.25% across all four quartiles, tightest range of any model). This is what a null hypothesis looks like: uniform drift across volatility regimes.
+
+The regime analysis makes the Tier 1/Tier 2 finding harder to argue with: the absence of skill is not concentrated in one volatility state, and it does not disappear in the high-vol regime where mean-reversion or momentum effects are most often claimed.
 
 ---
 
