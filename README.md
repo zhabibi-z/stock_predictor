@@ -11,7 +11,7 @@ An earlier version of this README reported a headline MLP accuracy of 52.80% "ne
 ```bash
 pip install -r requirements.txt
 python main.py --seeds 10          # full run — the tables below
-pytest tests/ -v                   # 86 tests, including the leakage check
+pytest tests/ -v                    # 86 tests, including the leakage check
 ruff check src/ app.py main.py     # lint — clean
 ```
 
